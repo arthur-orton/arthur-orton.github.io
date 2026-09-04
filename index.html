@@ -124,6 +124,17 @@
     box-shadow:0 8px 24px -8px rgba(0,0,0,.4);max-width:90vw;text-align:center;z-index:50;
   }
   .skeleton{color:var(--text-dim);font-size:13px;padding:24px;text-align:center;}
+
+  @media (min-width:700px){
+    .page{max-width:900px;}
+    .hero{padding:36px 32px 30px;}
+    main.body{padding:28px 32px 12px;gap:22px;}
+    .podium{flex-direction:row;}
+    .stat-card{flex:1;flex-direction:column;align-items:flex-start;gap:14px;}
+    .stat-right{align-items:flex-start;}
+    .stat-card.rank1 .stat-num{font-size:36px;}
+    footer{padding:22px 32px 32px;}
+  }
 </style>
 </head>
 <body>
@@ -277,6 +288,19 @@
     var base = v / Math.pow(10, exp);
     var niceBase = base < 1.5 ? 1 : base < 3 ? 2 : base < 7 ? 5 : 10;
     return niceBase * Math.pow(10, exp);
+  }
+
+  // fits an axis to [min,max] with ~count nice-numbered ticks, padding out
+  // to a round step rather than always anchoring the low end at 0
+  function niceDomain(min, max, count){
+    if(min === max){ min = Math.max(0, min - 1); max = max + 1; }
+    var rawStep = (max - min) / Math.max(1, count - 1);
+    var step = roundNice(rawStep) || 1;
+    var niceMin = Math.max(0, Math.floor(min / step) * step);
+    var niceMax = Math.ceil(max / step) * step;
+    var ticks = [];
+    for(var v = niceMin; v <= niceMax + step*0.5; v += step){ ticks.push(Math.round(v)); }
+    return {min:niceMin, max:niceMax, ticks:ticks};
   }
 
   function colorFor(name){
@@ -486,16 +510,24 @@
     var latest = pts[pts.length-1][1];
     var topNames = latest.slice(0, 8).map(function(it){ return it[0]; });
 
-    var maxVotes = 1;
+    var minVotes = Infinity, maxVotes = -Infinity;
     pts.forEach(function(p){
       p[1].forEach(function(it){
-        if(topNames.indexOf(it[0]) !== -1 && it[1] > maxVotes) maxVotes = it[1];
+        if(topNames.indexOf(it[0]) === -1) return;
+        if(it[1] < minVotes) minVotes = it[1];
+        if(it[1] > maxVotes) maxVotes = it[1];
       });
     });
+    if(!isFinite(minVotes)){ minVotes = 0; maxVotes = 1; }
+
+    // fit the y-axis to the range actually on screen -- when every shown
+    // candidate already has a high vote count, the axis shouldn't waste
+    // vertical space walking all the way down to 0
+    var domain = niceDomain(minVotes, maxVotes, 4);
 
     function xScale(t){ return padL + (t - tMin) / (tMax - tMin) * plotW; }
     function yScale(v){
-      var s = Math.sqrt(Math.max(0,v)) / Math.sqrt(maxVotes);
+      var s = (v - domain.min) / (domain.max - domain.min);
       return padT + plotH - s * plotH;
     }
 
@@ -506,10 +538,7 @@
       return e;
     }
 
-    var ticks = [0,0.25,0.5,0.75,1.0].map(function(f){
-      return roundNice(Math.pow(f*Math.sqrt(maxVotes), 2));
-    });
-    ticks = ticks.filter(function(v,i,arr){ return arr.indexOf(v)===i; });
+    var ticks = domain.ticks;
     ticks.forEach(function(v){
       var y = yScale(v);
       svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:y,y2:y,class:'grid-line'}));
