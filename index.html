@@ -309,6 +309,14 @@
     return PALETTE[hash % PALETTE.length];
   }
 
+  // some activities (e.g. 悍將中學校草) store "稱號 - 姓名"; show just the
+  // name. matching against stored history still uses the raw name, only
+  // the rendered label is shortened.
+  function displayName(name){
+    var parts = String(name).split(' - ');
+    return parts.length > 1 ? parts[parts.length-1].trim() : name;
+  }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
@@ -428,7 +436,7 @@
       tile.innerHTML =
         '<div class="stat-left">' +
           '<span class="stat-rank">#' + (idx+1) + '</span>' +
-          '<span class="stat-name">' + escapeHtml(name) + '</span>' +
+          '<span class="stat-name">' + escapeHtml(displayName(name)) + '</span>' +
           '<span class="stat-delta">最近' + range.label + '增加 ' + formatVotes(Math.max(0,delta)) + ' 票</span>' +
         '</div>' +
         '<div class="stat-right">' +
@@ -471,7 +479,7 @@
       row.innerHTML =
         '<span class="rank-badge">' + (idx+1) + '</span>' +
         '<div class="rank-info">' +
-          '<span class="rank-name">' + escapeHtml(name) + '</span>' +
+          '<span class="rank-name">' + escapeHtml(displayName(name)) + '</span>' +
           meta +
         '</div>' +
         '<span class="rank-votes">' + formatVotes(votes) + '</span>';
@@ -487,13 +495,13 @@
 
     var wrap = svg.parentElement;
     var W = Math.max(280, Math.round(wrap.clientWidth || 380));
-    var H = Math.round(W * 0.46);
-    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
     var pts = filteredPoints();
     if(pts.length === 0){
+      var H0 = 240;
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H0);
       var t = document.createElementNS('http://www.w3.org/2000/svg','text');
-      t.setAttribute('x', String(W/2)); t.setAttribute('y', String(H/2));
+      t.setAttribute('x', String(W/2)); t.setAttribute('y', String(H0/2));
       t.setAttribute('text-anchor','middle');
       t.setAttribute('class','axis-label');
       t.textContent = '尚無足夠資料繪製走勢圖';
@@ -501,14 +509,19 @@
       return;
     }
 
-    var padL=48, padR=94, padT=14, padB=24;
-    var plotW = W-padL-padR, plotH = H-padT-padB;
-
     var tMin = pts[0][0], tMax = pts[pts.length-1][0];
     if(tMax === tMin) tMax = tMin + 1;
 
     var latest = pts[pts.length-1][1];
     var topNames = latest.slice(0, 8).map(function(it){ return it[0]; });
+
+    // height scales with how many lines/labels need to stack, not the
+    // width -- on a narrow phone screen a width-based ratio left everything
+    // crushed into a couple dozen pixels
+    var padL=48, padR=94, padT=14, padB=24;
+    var H = Math.min(560, Math.max(260, topNames.length * 46 + padT + padB));
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    var plotW = W-padL-padR, plotH = H-padT-padB;
 
     var minVotes = Infinity, maxVotes = -Infinity;
     pts.forEach(function(p){
@@ -592,7 +605,7 @@
         svg.appendChild(el('line',{x1:ep.x+3, y1:ep.y, x2:ep.x+7, y2:ep.labelY, stroke:ep.color, 'stroke-width':1, opacity:0.5}));
       }
       var lbl = el('text',{x:ep.x+9, y:ep.labelY+4, class:'line-end-label', fill:ep.color});
-      lbl.textContent = ep.name;
+      lbl.textContent = displayName(ep.name);
       svg.appendChild(lbl);
     });
   }
