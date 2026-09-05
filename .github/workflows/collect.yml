@@ -1,8 +1,9 @@
+# Manual/backup collector. The regular per-minute collection runs on a
+# Cloudflare Worker Cron Trigger (see ../../vote-monitor-collector) since
+# GitHub's own schedule trigger is best-effort and can lag by hours.
 name: Collect vote snapshots
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 permissions:
