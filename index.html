@@ -570,7 +570,7 @@
       svg.appendChild(lbl);
     });
 
-    computeTimeTicks(tMin, tMax, 3).forEach(function(tv){
+    computeTimeTicks(tMin, tMax, 6).forEach(function(tv){
       var x = xScale(tv);
       var anchor = x < padL+28 ? 'start' : x > W-padR-28 ? 'end' : 'middle';
       var lbl = el('text',{x:x,y:H-6,'text-anchor':anchor,class:'axis-label'});
