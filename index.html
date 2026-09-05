@@ -561,10 +561,22 @@
     // couple of candidates dominate and the rest are bunched together
     var topNames = latest.slice(0, 6).map(function(it){ return it[0]; });
 
+    // right margin only needs to fit whatever these particular names
+    // render as -- a fixed guess wasted a lot of width on narrow phone
+    // screens once bib-number tags were stripped and names got short.
+    // the SVG's viewBox width always equals its rendered CSS width (see
+    // W above), so 1 user unit really is 1 px and this estimate holds.
+    var maxLabelWidth = topNames.reduce(function(m, name){
+      var text = displayName(name), w = 0;
+      for(var i=0;i<text.length;i++){ w += text.charCodeAt(i) > 0x2E80 ? 15 : 8.5; }
+      return Math.max(m, w);
+    }, 0);
+    var padR = Math.max(50, Math.min(110, Math.round(maxLabelWidth + 18)));
+
     // height scales with how many lines/labels need to stack, not the
     // width -- on a narrow phone screen a width-based ratio left everything
     // crushed into a couple dozen pixels
-    var padL=48, padR=94, padT=14, padB=24;
+    var padL=48, padT=14, padB=24;
     var H = Math.min(560, Math.max(260, topNames.length * 46 + padT + padB));
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     var plotW = W-padL-padR, plotH = H-padT-padB;
