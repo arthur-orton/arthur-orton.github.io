@@ -95,12 +95,38 @@
   .range-btn[aria-selected="true"]{background:var(--surface);color:var(--text);}
   .range-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   .range-note{font-size:11.5px;color:var(--text-dim);margin:10px 0 0;min-height:14px;}
-  .chart-wrap{margin-top:10px;}
-  #bumpChart{width:100%;height:auto;display:block;}
+  .chart-wrap{margin-top:10px;position:relative;}
+  #bumpChart{width:100%;height:auto;display:block;touch-action:pan-y;}
   .axis-label{fill:var(--text-dim);font-family:var(--font);font-size:10px;}
   .grid-line{stroke:var(--border);stroke-width:1;opacity:.6;}
   .line-path{fill:none;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round;}
   .line-end-label{font-family:var(--font);font-size:14px;font-weight:700;}
+  .hover-line{stroke:var(--text-dim);stroke-width:1;stroke-dasharray:3,3;opacity:.6;}
+  .hover-dot{stroke:var(--surface);stroke-width:1.5;}
+
+  .chart-tooltip{
+    position:absolute;top:0;left:0;z-index:20;pointer-events:none;
+    display:none;min-width:132px;max-width:220px;
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:8px 10px;box-shadow:0 6px 20px -6px rgba(14,31,74,.28);
+    font-family:var(--font);
+  }
+  .chart-tooltip.visible{display:block;}
+  .chart-tooltip-time{
+    font-size:11px;font-weight:700;color:var(--text-dim);
+    margin:0 0 6px;padding-bottom:6px;border-bottom:1px solid var(--border);
+    font-variant-numeric:tabular-nums;
+  }
+  .chart-tooltip-row{display:flex;align-items:center;gap:6px;padding:2px 0;}
+  .chart-tooltip-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+  .chart-tooltip-name{
+    flex:1;min-width:0;font-size:12px;color:var(--text);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .chart-tooltip-value{
+    font-size:12px;font-weight:700;color:var(--text);
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+  }
 
   .rank-list{display:flex;flex-direction:column;}
   .rank-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
@@ -181,6 +207,7 @@
       <div class="range-note" id="rangeNote"></div>
       <div class="chart-wrap">
         <svg id="bumpChart" viewBox="0 0 820 340" preserveAspectRatio="xMidYMid meet" role="img" aria-label="票數排名走勢圖"></svg>
+        <div class="chart-tooltip" id="chartTooltip"></div>
       </div>
     </section>
 
@@ -227,6 +254,11 @@
     cache: {},
     refreshTimer: null
   };
+
+  // snapshot of the chart's current scales/data, refreshed on every
+  // renderChart() call so the hover handler (attached once, outside the
+  // render cycle) always reads the latest layout
+  var chartState = null;
 
   function $(id){ return document.getElementById(id); }
 
@@ -502,12 +534,14 @@
   function renderChart(){
     var svg = $('bumpChart');
     while(svg.firstChild) svg.removeChild(svg.firstChild);
+    hideChartHover();
 
     var wrap = svg.parentElement;
     var W = Math.max(280, Math.round(wrap.clientWidth || 380));
 
     var pts = filteredPoints();
     if(pts.length === 0){
+      chartState = null;
       var H0 = 240;
       svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H0);
       var t = document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -580,12 +614,14 @@
       svg.appendChild(lbl);
     });
 
+    // index-based, not hashed: guarantees the up-to-6 lines on screen
+    // together never share a color, at the cost of a name's color
+    // shifting if its rank among the shown set changes between renders
+    var topColors = topNames.map(function(name, idx){ return PALETTE[idx % PALETTE.length]; });
+
     var endpoints = [];
     topNames.forEach(function(name, idx){
-      // index-based, not hashed: guarantees the up-to-8 lines on screen
-      // together never share a color, at the cost of a name's color
-      // shifting if its rank among the shown set changes between renders
-      var color = PALETTE[idx % PALETTE.length];
+      var color = topColors[idx];
       var d = '';
       var lastPt = null;
       pts.forEach(function(p){
@@ -644,6 +680,116 @@
       lbl.textContent = displayName(ep.name);
       svg.appendChild(lbl);
     });
+
+    svg.appendChild(el('g', {id:'hoverLayer'}));
+
+    chartState = {
+      pts:pts, topNames:topNames, colors:topColors,
+      xScale:xScale, yScale:yScale,
+      padL:padL, padR:padR, padT:padT, plotW:plotW, plotH:plotH,
+      W:W, H:H, tMin:tMin, tMax:tMax
+    };
+  }
+
+  // ---------- rendering: chart hover / tooltip ----------
+
+  function hideChartHover(){
+    var svg = $('bumpChart');
+    var layer = svg && svg.querySelector('#hoverLayer');
+    if(layer){ while(layer.firstChild) layer.removeChild(layer.firstChild); }
+    var tooltip = $('chartTooltip');
+    if(tooltip) tooltip.classList.remove('visible');
+  }
+
+  function nearestPoint(svgX){
+    var cs = chartState;
+    var clampedX = Math.min(Math.max(svgX, cs.padL), cs.W - cs.padR);
+    var t = cs.tMin + (clampedX - cs.padL) / cs.plotW * (cs.tMax - cs.tMin);
+    var idx = 0, bestDiff = Infinity;
+    for(var i=0;i<cs.pts.length;i++){
+      var diff = Math.abs(cs.pts[i][0] - t);
+      if(diff < bestDiff){ bestDiff = diff; idx = i; }
+    }
+    return cs.pts[idx];
+  }
+
+  function handleChartPointer(evt){
+    if(!chartState) return;
+    var svg = $('bumpChart');
+    var rect = svg.getBoundingClientRect();
+    if(!rect.width || !rect.height) return;
+    var vb = svg.viewBox.baseVal;
+    var svgX = (evt.clientX - rect.left) * (vb.width / rect.width);
+    var point = nearestPoint(svgX);
+    if(!point) return;
+
+    var cs = chartState;
+    var ns = 'http://www.w3.org/2000/svg';
+    function el(tag, attrs){
+      var e = document.createElementNS(ns, tag);
+      for(var k in attrs) e.setAttribute(k, attrs[k]);
+      return e;
+    }
+
+    var layer = svg.querySelector('#hoverLayer');
+    if(!layer) return;
+    while(layer.firstChild) layer.removeChild(layer.firstChild);
+
+    var x = cs.xScale(point[0]);
+    layer.appendChild(el('line',{x1:x,y1:cs.padT,x2:x,y2:cs.padT+cs.plotH,class:'hover-line'}));
+
+    var rows = [];
+    cs.topNames.forEach(function(name, i){
+      var match = point[1].filter(function(it){ return it[0]===name; })[0];
+      if(!match) return;
+      var y = cs.yScale(match[1]);
+      layer.appendChild(el('circle',{cx:x, cy:y, r:3.5, fill:cs.colors[i], class:'hover-dot'}));
+      rows.push({name:name, votes:match[1], color:cs.colors[i]});
+    });
+    rows.sort(function(a,b){ return b.votes - a.votes; });
+
+    var tooltip = $('chartTooltip');
+    var html = '<div class="chart-tooltip-time">' + formatClock(point[0]) + '</div>';
+    rows.forEach(function(r){
+      html +=
+        '<div class="chart-tooltip-row">' +
+          '<span class="chart-tooltip-dot" style="background:' + r.color + '"></span>' +
+          '<span class="chart-tooltip-name">' + escapeHtml(displayName(r.name)) + '</span>' +
+          '<span class="chart-tooltip-value">' + formatVotes(r.votes) + '</span>' +
+        '</div>';
+    });
+    tooltip.innerHTML = html;
+    tooltip.classList.add('visible');
+
+    var wrapRect = svg.parentElement.getBoundingClientRect();
+    var pxX = evt.clientX - wrapRect.left;
+    var pxY = evt.clientY - wrapRect.top;
+    var tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+    var left = pxX + 14;
+    if(left + tw > wrapRect.width) left = pxX - tw - 14;
+    if(left < 4) left = 4;
+    var top = pxY - th/2;
+    if(top < 4) top = 4;
+    if(top + th > wrapRect.height - 4) top = wrapRect.height - th - 4;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  }
+
+  function initChartHover(){
+    var svg = $('bumpChart');
+    // pointer events cover mouse+touch+pen in every modern browser; mouse
+    // events are listened for too since some embedding/automation contexts
+    // only dispatch the older event family
+    ['pointermove','pointerdown','mousemove'].forEach(function(evtName){
+      svg.addEventListener(evtName, function(evt){
+        try{ handleChartPointer(evt); }catch(e){ console.error(e); }
+      });
+    });
+    ['pointerleave','pointercancel','mouseleave'].forEach(function(evtName){
+      svg.addEventListener(evtName, function(){
+        try{ hideChartHover(); }catch(e){ console.error(e); }
+      });
+    });
   }
 
   // ---------- top-level render / lifecycle ----------
@@ -681,6 +827,7 @@
   function init(){
     renderSelector();
     renderRangePicker();
+    initChartHover();
     refresh();
 
     if(state.refreshTimer) clearInterval(state.refreshTimer);
