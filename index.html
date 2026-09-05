@@ -390,6 +390,34 @@
     return pts.length ? pts[pts.length-1] : null;
   }
 
+  // the x-axis domain a selected range should draw as. When history
+  // actually reaches back past the requested range (e.g. "12 小時" chosen
+  // with 30 hours on hand), the axis spans the full 12 hours the button
+  // promises -- the oldest plotted point can still land somewhat later
+  // than that if the older data happens to be sparse there, same as any
+  // point in the middle of the line, but the axis itself isn't cut short
+  // by that sparseness. Only when history genuinely doesn't reach back
+  // that far does the domain shrink to what's actually available.
+  function chartDomain(){
+    var allPts = currentPoints();
+    var pts = filteredPoints();
+    var range = RANGES.filter(function(r){ return r.key === state.rangeKey; })[0];
+    if(!pts.length){
+      return {pts:pts, domainMin:null, domainMax:null, hasFullCoverage:false};
+    }
+    if(!range || range.ms === Infinity){
+      return {pts:pts, domainMin:pts[0][0], domainMax:pts[pts.length-1][0], hasFullCoverage:true};
+    }
+    var cutoff = Date.now()/1000 - range.ms/1000;
+    var hasFullCoverage = allPts.length > 0 && allPts[0][0] <= cutoff;
+    return {
+      pts:pts,
+      domainMin: hasFullCoverage ? cutoff : pts[0][0],
+      domainMax: pts[pts.length-1][0],
+      hasFullCoverage: hasFullCoverage
+    };
+  }
+
   // ---------- rendering: selector ----------
 
   function renderSelector(){
@@ -431,13 +459,13 @@
   function renderRangeNote(){
     var note = $('rangeNote');
     var pts = currentPoints();
-    var f = filteredPoints();
-    var range = RANGES.filter(function(r){ return r.key === state.rangeKey; })[0];
     if(pts.length < 2){
+      var f = filteredPoints();
       note.textContent = f.length ? '目前僅有 1 筆資料，累積更多資料後走勢圖會逐漸展開。' : '';
       return;
     }
-    var span = (f[f.length-1][0] - f[0][0]) * 1000;
+    var d = chartDomain();
+    var span = (d.domainMax - d.domainMin) * 1000;
     note.textContent = '資料涵蓋範圍：' + formatSpan(span) + '。';
   }
 
@@ -539,7 +567,8 @@
     var wrap = svg.parentElement;
     var W = Math.max(280, Math.round(wrap.clientWidth || 380));
 
-    var pts = filteredPoints();
+    var domain = chartDomain();
+    var pts = domain.pts;
     if(pts.length === 0){
       chartState = null;
       var H0 = 240;
@@ -553,7 +582,7 @@
       return;
     }
 
-    var tMin = pts[0][0], tMax = pts[pts.length-1][0];
+    var tMin = domain.domainMin, tMax = domain.domainMax;
     if(tMax === tMin) tMax = tMin + 1;
 
     var latest = pts[pts.length-1][1];
@@ -594,11 +623,11 @@
     // fit the y-axis to the range actually on screen -- when every shown
     // candidate already has a high vote count, the axis shouldn't waste
     // vertical space walking all the way down to 0
-    var domain = niceDomain(minVotes, maxVotes, 4);
+    var voteDomain = niceDomain(minVotes, maxVotes, 4);
 
     function xScale(t){ return padL + (t - tMin) / (tMax - tMin) * plotW; }
     function yScale(v){
-      var s = (v - domain.min) / (domain.max - domain.min);
+      var s = (v - voteDomain.min) / (voteDomain.max - voteDomain.min);
       return padT + plotH - s * plotH;
     }
 
@@ -609,7 +638,7 @@
       return e;
     }
 
-    var ticks = domain.ticks;
+    var ticks = voteDomain.ticks;
     ticks.forEach(function(v){
       var y = yScale(v);
       svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:y,y2:y,class:'grid-line'}));
