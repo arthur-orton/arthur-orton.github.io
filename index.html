@@ -75,11 +75,12 @@
   }
   .stat-left{display:flex;flex-direction:column;gap:4px;min-width:0;}
   .stat-rank{font-size:13px;font-weight:700;color:var(--accent);}
-  .stat-name{font-size:17px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .stat-name{font-size:26px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .stat-delta{font-size:12px;color:var(--text-dim);}
   .stat-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none;}
   .stat-num{font-size:26px;font-weight:800;letter-spacing:-.01em;color:var(--text);}
   .stat-card.rank1 .stat-num{font-size:32px;}
+  .stat-card.rank1 .stat-name{font-size:32px;}
   .stat-cap{font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--text-dim);}
 
   .card{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px rgba(14,31,74,.08);padding:18px;}
@@ -99,7 +100,7 @@
   .axis-label{fill:var(--text-dim);font-family:var(--font);font-size:10px;}
   .grid-line{stroke:var(--border);stroke-width:1;opacity:.6;}
   .line-path{fill:none;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round;}
-  .line-end-label{font-family:var(--font);font-size:11.5px;font-weight:700;}
+  .line-end-label{font-family:var(--font);font-size:14px;font-weight:700;}
 
   .rank-list{display:flex;flex-direction:column;}
   .rank-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
@@ -133,6 +134,8 @@
     .stat-card{flex:1;flex-direction:column;align-items:flex-start;gap:14px;}
     .stat-right{align-items:flex-start;}
     .stat-card.rank1 .stat-num{font-size:36px;}
+    .stat-card.rank1 .stat-name{font-size:36px;}
+    .rank-list{display:grid;grid-template-columns:1fr 1fr;column-gap:36px;}
     footer{padding:22px 32px 32px;}
   }
 </style>
@@ -216,7 +219,7 @@
     {key:'all', label:'全部',    ms: Infinity}
   ];
 
-  var PALETTE = ['#0057b8','#dc2626','#7c3aed','#d97706','#16a34a','#0891b2','#be185d','#4d7c0f','#9333ea','#0369a1','#c2410c','#15803d'];
+  var PALETTE = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#17becf'];
 
   var state = {
     activityId: ACTIVITIES[0].id,
@@ -303,10 +306,20 @@
     return {min:niceMin, max:niceMax, ticks:ticks};
   }
 
-  function colorFor(name){
-    var hash = 0;
-    for(var i=0;i<name.length;i++){ hash = (hash*31 + name.charCodeAt(i)) >>> 0; }
-    return PALETTE[hash % PALETTE.length];
+  // clean, round time marks (on the hour/half-hour/etc.) instead of
+  // arbitrary interpolated instants
+  var TIME_STEPS = [60,300,600,900,1800,3600,2*3600,3*3600,4*3600,6*3600,12*3600,24*3600,2*86400,3*86400,7*86400];
+  function computeTimeTicks(tMin, tMax, targetCount){
+    var span = tMax - tMin;
+    if(span <= 0) return [tMin];
+    var rawStep = span / Math.max(1, targetCount - 1);
+    var step = TIME_STEPS[TIME_STEPS.length - 1];
+    for(var i=0;i<TIME_STEPS.length;i++){ if(TIME_STEPS[i] >= rawStep){ step = TIME_STEPS[i]; break; } }
+    var start = Math.ceil(tMin / step) * step;
+    var ticks = [];
+    for(var t = start; t <= tMax; t += step){ ticks.push(t); }
+    if(!ticks.length) ticks.push(Math.round((tMin+tMax)/2));
+    return ticks;
   }
 
   // some activities (e.g. 悍將中學校草) store "稱號 - 姓名"; show just the
@@ -314,7 +327,8 @@
   // the rendered label is shortened.
   function displayName(name){
     var parts = String(name).split(' - ');
-    return parts.length > 1 ? parts[parts.length-1].trim() : name;
+    var n = parts.length > 1 ? parts[parts.length-1].trim() : name;
+    return n.replace(/#\d+$/, '');
   }
 
   function escapeHtml(s){
@@ -392,11 +406,7 @@
       return;
     }
     var span = (f[f.length-1][0] - f[0][0]) * 1000;
-    if(range.ms !== Infinity && span < range.ms * 0.95){
-      note.textContent = '已選「' + range.label + '」，但目前累積的資料只有 ' + formatSpan(span) + '，以下顯示目前所有可用資料。';
-    } else {
-      note.textContent = '資料涵蓋範圍：' + formatSpan(span) + '。';
-    }
+    note.textContent = '資料涵蓋範圍：' + formatSpan(span) + '。';
   }
 
   // ---------- rendering: podium ----------
@@ -441,7 +451,7 @@
         '</div>' +
         '<div class="stat-right">' +
           '<span class="stat-num">' + formatVotes(votes) + '</span>' +
-          '<span class="stat-cap">TOTAL VOTES</span>' +
+          '<span class="stat-cap">總票數</span>' +
         '</div>';
       wrap.appendChild(tile);
     });
@@ -560,17 +570,20 @@
       svg.appendChild(lbl);
     });
 
-    [0,0.5,1].forEach(function(f){
-      var tv = tMin + f*(tMax-tMin);
+    computeTimeTicks(tMin, tMax, 3).forEach(function(tv){
       var x = xScale(tv);
-      var lbl = el('text',{x:x,y:H-6,'text-anchor': f===0?'start':f===1?'end':'middle',class:'axis-label'});
+      var anchor = x < padL+28 ? 'start' : x > W-padR-28 ? 'end' : 'middle';
+      var lbl = el('text',{x:x,y:H-6,'text-anchor':anchor,class:'axis-label'});
       lbl.textContent = formatClock(tv);
       svg.appendChild(lbl);
     });
 
     var endpoints = [];
     topNames.forEach(function(name, idx){
-      var color = colorFor(name);
+      // index-based, not hashed: guarantees the up-to-8 lines on screen
+      // together never share a color, at the cost of a name's color
+      // shifting if its rank among the shown set changes between renders
+      var color = PALETTE[idx % PALETTE.length];
       var d = '';
       var lastPt = null;
       pts.forEach(function(p){
@@ -588,7 +601,7 @@
       }
     });
 
-    var minGap = 15;
+    var minGap = 19;
     endpoints.sort(function(a,b){ return a.y-b.y; });
     for(var i=1;i<endpoints.length;i++){
       if(endpoints[i].labelY - endpoints[i-1].labelY < minGap){
@@ -601,9 +614,6 @@
     }
 
     endpoints.forEach(function(ep){
-      if(Math.abs(ep.labelY - ep.y) > 2){
-        svg.appendChild(el('line',{x1:ep.x+3, y1:ep.y, x2:ep.x+7, y2:ep.labelY, stroke:ep.color, 'stroke-width':1, opacity:0.5}));
-      }
       var lbl = el('text',{x:ep.x+9, y:ep.labelY+4, class:'line-end-label', fill:ep.color});
       lbl.textContent = displayName(ep.name);
       svg.appendChild(lbl);
