@@ -523,7 +523,9 @@
     if(tMax === tMin) tMax = tMin + 1;
 
     var latest = pts[pts.length-1][1];
-    var topNames = latest.slice(0, 8).map(function(it){ return it[0]; });
+    // fewer simultaneous lines means less crowding at the low end when a
+    // couple of candidates dominate and the rest are bunched together
+    var topNames = latest.slice(0, 6).map(function(it){ return it[0]; });
 
     // height scales with how many lines/labels need to stack, not the
     // width -- on a narrow phone screen a width-based ratio left everything
@@ -601,20 +603,44 @@
       }
     });
 
-    var minGap = 19;
+    // lay out labels top-to-bottom with a minimum gap, then -- if that ran
+    // past the bottom edge -- compress from the bottom up instead of
+    // shifting the whole block, which used to be able to push the topmost
+    // label above the chart entirely when a couple of leaders towered over
+    // a tightly bunched tail of near-zero candidates
+    var minGap = 19, labelTop = padT + 8, labelBottom = padT + plotH - 4;
     endpoints.sort(function(a,b){ return a.y-b.y; });
-    for(var i=1;i<endpoints.length;i++){
-      if(endpoints[i].labelY - endpoints[i-1].labelY < minGap){
-        endpoints[i].labelY = endpoints[i-1].labelY + minGap;
+    endpoints.forEach(function(ep, i){
+      var minAllowed = i===0 ? labelTop : endpoints[i-1].labelY + minGap;
+      ep.labelY = Math.max(ep.y, minAllowed);
+    });
+    var last = endpoints[endpoints.length-1];
+    if(last && last.labelY > labelBottom){
+      last.labelY = labelBottom;
+      for(var k=endpoints.length-2;k>=0;k--){
+        var maxAllowed = endpoints[k+1].labelY - minGap;
+        if(endpoints[k].labelY > maxAllowed) endpoints[k].labelY = maxAllowed;
       }
     }
-    var overflow = endpoints.length ? endpoints[endpoints.length-1].labelY - (padT+plotH) : 0;
-    if(overflow > 0){
-      for(var j=0;j<endpoints.length;j++){ endpoints[j].labelY -= overflow; }
-    }
+    endpoints.forEach(function(ep){
+      ep.labelY = Math.min(Math.max(ep.labelY, labelTop), labelBottom);
+    });
 
     endpoints.forEach(function(ep){
-      var lbl = el('text',{x:ep.x+9, y:ep.labelY+4, class:'line-end-label', fill:ep.color});
+      // a dot always marks the real last value; when collision-avoidance
+      // has pushed the label away from it (common when a couple of huge
+      // leaders squeeze a cluster of near-zero candidates together), a
+      // connector traces the label back to the line it actually belongs
+      // to -- color alone isn't enough once several lines share a hue
+      // family or the shift is large
+      svg.appendChild(el('circle',{cx:ep.x, cy:ep.y, r:2.5, fill:ep.color}));
+      if(Math.abs(ep.labelY - ep.y) > 3){
+        svg.appendChild(el('line',{
+          x1:ep.x+3, y1:ep.y, x2:ep.x+8, y2:ep.labelY,
+          stroke:ep.color, 'stroke-width':1, opacity:0.6, 'stroke-dasharray':'2,2'
+        }));
+      }
+      var lbl = el('text',{x:ep.x+10, y:ep.labelY+4, class:'line-end-label', fill:ep.color});
       lbl.textContent = displayName(ep.name);
       svg.appendChild(lbl);
     });
