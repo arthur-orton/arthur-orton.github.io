@@ -665,13 +665,23 @@
       var color = topColors[idx];
       var d = '';
       var lastPt = null;
+      var firstPt = null;
       pts.forEach(function(p){
         var match = p[1].filter(function(it){ return it[0]===name; })[0];
         if(!match){ lastPt = null; return; }
         var x = xScale(p[0]), y = yScale(match[1]);
+        if(!firstPt) firstPt = [x,y];
         d += (lastPt ? 'L' : 'M') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
         lastPt = [x,y,match[1]];
       });
+      // when the axis legitimately spans further back than this
+      // candidate's first sample in the window (older history gets
+      // thinned unevenly to keep the collector's CPU cost down), hold
+      // that first known value flat back to the axis edge instead of
+      // leaving a blank gap that reads as a missing/broken line
+      if(domain.hasFullCoverage && firstPt && firstPt[0] > padL + 0.5){
+        d = 'M' + padL.toFixed(1) + ',' + firstPt[1].toFixed(1) + ' L' + d.slice(1);
+      }
       if(d){
         svg.appendChild(el('path',{d:d.trim(), class:'line-path', stroke:color, opacity: idx<3?1:0.55}));
       }
