@@ -54,6 +54,11 @@
   @media (prefers-reduced-motion: reduce){.live-dot::after{animation:none;}}
   .live-label{font-weight:700;letter-spacing:.04em;}
   .live-time{color:rgba(255,255,255,.85);}
+  .stale-banner{
+    margin-top:12px;padding:8px 12px;border-radius:8px;
+    background:rgba(255,255,255,.16);color:#fff;font-size:12px;font-weight:600;
+    line-height:1.5;
+  }
 
   main.body{flex:1;padding:20px 20px 8px;display:flex;flex-direction:column;gap:18px;}
 
@@ -186,6 +191,9 @@
       <span class="live-dot" id="liveDot"></span>
       <span class="live-label">LIVE</span>
       <span class="live-time" id="updatedAt">載入中…</span>
+    </div>
+    <div class="stale-banner" id="staleBanner" hidden>
+      ⚠️ 資料來源目前延遲更新，票數可能不是最新，恢復後會自動補上
     </div>
   </header>
 
@@ -856,6 +864,7 @@
       var dot = $('liveDot');
       var stale = !snap || (Date.now()/1000 - snap[0]) > 20*60;
       dot.classList.toggle('stale', stale);
+      $('staleBanner').hidden = !stale;
     }catch(e){
       console.error('renderAll failed', e);
       showError('畫面更新時發生問題，稍後會自動重試。');
