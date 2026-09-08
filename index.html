@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>投票即時監控</title>
+<title>投票最終結果</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -46,19 +46,8 @@
   .eyebrow{margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.14em;color:rgba(255,255,255,.82);}
   .hero h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.01em;}
   .live-row{display:flex;align-items:center;gap:8px;margin-top:18px;font-size:14px;}
-  .live-dot{width:9px;height:9px;border-radius:50%;background:#4ade80;flex:none;position:relative;}
-  .live-dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;background:#4ade80;opacity:.4;animation:pulse 2.2s ease-out infinite;}
-  .live-dot.stale{background:rgba(255,255,255,.5);}
-  .live-dot.stale::after{display:none;}
-  @keyframes pulse{0%{transform:scale(.6);opacity:.5;}100%{transform:scale(2.6);opacity:0;}}
-  @media (prefers-reduced-motion: reduce){.live-dot::after{animation:none;}}
   .live-label{font-weight:700;letter-spacing:.04em;}
   .live-time{color:rgba(255,255,255,.85);}
-  .stale-banner{
-    margin-top:12px;padding:8px 12px;border-radius:8px;
-    background:rgba(255,255,255,.16);color:#fff;font-size:12px;font-weight:600;
-    line-height:1.5;
-  }
 
   main.body{flex:1;padding:20px 20px 8px;display:flex;flex-direction:column;gap:18px;}
 
@@ -184,16 +173,12 @@
       </span>
       <div>
         <p class="eyebrow">FUBON VOTE MONITOR</p>
-        <h1>即時票數與排名</h1>
+        <h1>最終票數與排名</h1>
       </div>
     </div>
     <div class="live-row">
-      <span class="live-dot" id="liveDot"></span>
-      <span class="live-label">LIVE</span>
+      <span class="live-label">投票已結束</span>
       <span class="live-time" id="updatedAt">載入中…</span>
-    </div>
-    <div class="stale-banner" id="staleBanner" hidden>
-      ⚠️ 資料來源目前延遲更新，票數可能不是最新，恢復後會自動補上
     </div>
   </header>
 
@@ -226,7 +211,7 @@
   </main>
 
   <footer>
-    <p>資料取自富邦悍將 App 公開顯示之投票結果；僅讀取，不執行投票。約每分鐘更新一次。</p>
+    <p>資料取自富邦悍將 App 公開顯示之投票結果；僅讀取，不執行投票。投票已結束，此頁面保留最終票數與走勢供查閱，不再更新。</p>
   </footer>
 </div>
 
@@ -258,9 +243,8 @@
 
   var state = {
     activityId: ACTIVITIES[0].id,
-    rangeKey: '30m',
-    cache: {},
-    refreshTimer: null
+    rangeKey: 'all',
+    cache: {}
   };
 
   // snapshot of the chart's current scales/data, refreshed on every
@@ -515,7 +499,7 @@
         '<div class="stat-left">' +
           '<span class="stat-rank">#' + (idx+1) + '</span>' +
           '<span class="stat-name">' + escapeHtml(displayName(name)) + '</span>' +
-          '<span class="stat-delta">最近' + range.label + '增加 ' + formatVotes(Math.max(0,delta)) + ' 票</span>' +
+          '<span class="stat-delta">' + (range.key==='all' ? '期間累計增加 ' : '最近' + range.label + '增加 ') + formatVotes(Math.max(0,delta)) + ' 票</span>' +
         '</div>' +
         '<div class="stat-right">' +
           '<span class="stat-num">' + formatVotes(votes) + '</span>' +
@@ -861,10 +845,6 @@
       renderChart();
       var snap = latestSnapshot();
       $('updatedAt').textContent = formatUpdatedAt(snap ? snap[0] : null);
-      var dot = $('liveDot');
-      var stale = !snap || (Date.now()/1000 - snap[0]) > 20*60;
-      dot.classList.toggle('stale', stale);
-      $('staleBanner').hidden = !stale;
     }catch(e){
       console.error('renderAll failed', e);
       showError('畫面更新時發生問題，稍後會自動重試。');
@@ -889,11 +869,6 @@
     renderRangePicker();
     initChartHover();
     refresh();
-
-    if(state.refreshTimer) clearInterval(state.refreshTimer);
-    state.refreshTimer = setInterval(function(){
-      try{ refresh(); }catch(e){ console.error(e); showError('自動更新時發生問題。'); }
-    }, 60*1000);
   }
 
   var resizeTimer = null;
